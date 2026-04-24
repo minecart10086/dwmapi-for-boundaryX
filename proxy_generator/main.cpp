@@ -206,6 +206,8 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "#include <cstdint>" << endl;
     cpp_file << "#include <fstream>" << endl;
     cpp_file << "#include <string>" << endl;
+    cpp_file << "#include <vector>" << endl;
+    cpp_file << "#include <algorithm>" << endl;
     cpp_file << endl;
     cpp_file << "#define WIN32_LEAN_AND_MEAN" << endl;
     cpp_file << "#include <Windows.h>" << endl;
@@ -214,6 +216,9 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << endl;
     cpp_file << "#pragma comment(lib, \"user32.lib\")" << endl;
     cpp_file << "#pragma comment(lib, \"shell32.lib\")" << endl;
+    cpp_file << endl;
+
+    cpp_file << "#include <glaze/glaze.hpp>" << endl;
     cpp_file << endl;
 
     cpp_file << "using namespace RC;" << endl;
@@ -239,14 +244,14 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "void load_original_dll()" << endl;
     cpp_file << "{" << endl;
     cpp_file << "    wchar_t path[MAX_PATH];" << endl;
-    cpp_file << "    GetSystemDirectory(path, MAX_PATH);" << endl;
+    cpp_file << "    GetSystemDirectoryW(path, MAX_PATH);" << endl;
     cpp_file << endl;
     cpp_file << std::format("    std::wstring dll_path = std::wstring(path) + L\"\\\\{}\";", input_dll_name.string()) << endl;
     cpp_file << endl;
-    cpp_file << "    SOriginalDll = LoadLibrary(dll_path.c_str());" << endl;
+    cpp_file << "    SOriginalDll = LoadLibraryW(dll_path.c_str());" << endl;
     cpp_file << "    if (!SOriginalDll)" << endl;
     cpp_file << "    {" << endl;
-    cpp_file << "        MessageBox(nullptr, L\"Failed to load proxy DLL\", L\"UE4SS Error\", MB_OK | MB_ICONERROR);" << endl;
+    cpp_file << "        MessageBoxW(nullptr, L\"Failed to load proxy DLL\", L\"UE4SS Error\", MB_OK | MB_ICONERROR);" << endl;
     cpp_file << "        ExitProcess(0);" << endl;
     cpp_file << "    }" << endl;
     cpp_file << "}" << endl;
@@ -306,6 +311,77 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "}" << endl;
     cpp_file << endl;
 
+    cpp_file << "struct PayloadEntry" << endl;
+    cpp_file << "{" << endl;
+    cpp_file << "    int order;" << endl;
+    cpp_file << "    std::string filename;" << endl;
+    cpp_file << "    std::string remark;" << endl;
+    cpp_file << "    std::string path;" << endl;
+    cpp_file << endl;
+    cpp_file << "    struct glaze" << endl;
+    cpp_file << "    {" << endl;
+    cpp_file << "        using GLZ_T = PayloadEntry;" << endl;
+    cpp_file << "        static constexpr auto value = glz::object(" << endl;
+    cpp_file << "            \"order\", &GLZ_T::order," << endl;
+    cpp_file << "            \"filename\", &GLZ_T::filename," << endl;
+    cpp_file << "            \"remark\", &GLZ_T::remark," << endl;
+    cpp_file << "            \"path\", &GLZ_T::path" << endl;
+    cpp_file << "        );" << endl;
+    cpp_file << "    };" << endl;
+    cpp_file << "};" << endl;
+    cpp_file << endl;
+
+    cpp_file << "void load_payload_dlls_from_json(HMODULE moduleHandle)" << endl;
+    cpp_file << "{" << endl;
+    cpp_file << "    wchar_t moduleFilenameBuffer[1024]{'\\0'};" << endl;
+    cpp_file << "    GetModuleFileNameW(moduleHandle, moduleFilenameBuffer, sizeof(moduleFilenameBuffer) / sizeof(wchar_t));" << endl;
+    cpp_file << "    const auto currentPath = std::filesystem::path(moduleFilenameBuffer).parent_path();" << endl;
+    cpp_file << "    const fs::path jsonPath = currentPath / \"payload_index.json\";" << endl;
+    cpp_file << endl;
+    cpp_file << "    if (!fs::exists(jsonPath))" << endl;
+    cpp_file << "    {" << endl;
+    cpp_file << "        return;" << endl;
+    cpp_file << "    }" << endl;
+    cpp_file << endl;
+    cpp_file << "    std::ifstream jsonFile(jsonPath);" << endl;
+    cpp_file << "    if (!jsonFile.is_open())" << endl;
+    cpp_file << "    {" << endl;
+    cpp_file << "        return;" << endl;
+    cpp_file << "    }" << endl;
+    cpp_file << endl;
+    cpp_file << "    std::string jsonContent((std::istreambuf_iterator<char>(jsonFile)), std::istreambuf_iterator<char>());" << endl;
+    cpp_file << "    std::vector<PayloadEntry> payloads;" << endl;
+    cpp_file << "    auto parseError = glz::read_json(payloads, jsonContent);" << endl;
+    cpp_file << "    if (parseError)" << endl;
+    cpp_file << "    {" << endl;
+    cpp_file << "        return;" << endl;
+    cpp_file << "    }" << endl;
+    cpp_file << endl;
+    cpp_file << "    std::sort(payloads.begin(), payloads.end(), [](const PayloadEntry& a, const PayloadEntry& b)" << endl;
+    cpp_file << "    {" << endl;
+    cpp_file << "        return a.order < b.order;" << endl;
+    cpp_file << "    });" << endl;
+    cpp_file << endl;
+    cpp_file << "    for (const auto& payload : payloads)" << endl;
+    cpp_file << "    {" << endl;
+    cpp_file << "        fs::path dllPath = payload.path;" << endl;
+    cpp_file << "        if (!dllPath.is_absolute())" << endl;
+    cpp_file << "        {" << endl;
+    cpp_file << "            dllPath = currentPath / dllPath;" << endl;
+    cpp_file << "        }" << endl;
+    cpp_file << endl;
+    cpp_file << "        HMODULE hPayload = LoadLibraryW(dllPath.c_str());" << endl;
+    cpp_file << "        if (!hPayload)" << endl;
+    cpp_file << "        {" << endl;
+    cpp_file << "            std::wstring wFilename(payload.filename.begin(), payload.filename.end());" << endl;
+    cpp_file << "            std::wstring errorMsg = L\"Failed to load payload DLL: \" + wFilename;" << endl;
+    cpp_file << "            MessageBoxW(nullptr, errorMsg.c_str(), L\"Payload Error\", MB_OK | MB_ICONERROR);" << endl;
+    cpp_file << "            ExitProcess(0);" << endl;
+    cpp_file << "        }" << endl;
+    cpp_file << "    }" << endl;
+    cpp_file << "}" << endl;
+    cpp_file << endl;
+
     cpp_file << "HMODULE load_ue4ss_dll(HMODULE moduleHandle)" << endl;
     cpp_file << "{" << endl;
     cpp_file << "    HMODULE hModule = nullptr;" << endl;
@@ -326,7 +402,7 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "        }" << endl;
     cpp_file << endl;
     cpp_file << "        // Attempt to load UE4SS.dll from the command line path" << endl;
-    cpp_file << "        hModule = LoadLibrary(ue4ssArgPath.c_str());" << endl;
+    cpp_file << "        hModule = LoadLibraryW(ue4ssArgPath.c_str());" << endl;
     cpp_file << "        if (hModule)" << endl;
     cpp_file << "        {" << endl;
     cpp_file << "            return hModule;" << endl;
@@ -351,7 +427,7 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "            ue4ssOverridePath = ue4ssOverridePath / \"UE4SS.dll\";" << endl;
     cpp_file << endl;
     cpp_file << "            // Attempt to load UE4SS.dll from the override path" << endl;
-    cpp_file << "            hModule = LoadLibrary(ue4ssOverridePath.c_str());" << endl;
+    cpp_file << "            hModule = LoadLibraryW(ue4ssOverridePath.c_str());" << endl;
     cpp_file << "            if (hModule)" << endl;
     cpp_file << "            {" << endl;
     cpp_file << "                return hModule;" << endl;
@@ -361,11 +437,11 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << endl;
 
     cpp_file << "    // Attempt to load UE4SS.dll from ue4ss directory" << endl;
-    cpp_file << "    hModule = LoadLibrary(ue4ssPath.c_str());" << endl;
+    cpp_file << "    hModule = LoadLibraryW(ue4ssPath.c_str());" << endl;
     cpp_file << "    if (!hModule)" << endl;
     cpp_file << "    {" << endl;
     cpp_file << "        // If loading from ue4ss directory fails, load from the current directory" << endl;
-    cpp_file << "        hModule = LoadLibrary(L\"UE4SS.dll\");" << endl;
+    cpp_file << "        hModule = LoadLibraryW(L\"UE4SS.dll\");" << endl;
     cpp_file << "    }" << endl;
     cpp_file << endl;
     cpp_file << "    return hModule;" << endl;
@@ -379,6 +455,8 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "        load_original_dll();" << endl;
     cpp_file << "        setup_functions();" << endl;
     cpp_file << endl;
+    cpp_file << "        load_payload_dlls_from_json(hInstDll);" << endl;
+    cpp_file << endl;
     cpp_file << "        // Check if UE4SS should be disabled via command line argument" << endl;
     cpp_file << "        if (should_disable_ue4ss())" << endl;
     cpp_file << "        {" << endl;
@@ -389,7 +467,7 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "        HMODULE hUE4SSDll = load_ue4ss_dll(hInstDll);" << endl;
     cpp_file << "        if (!hUE4SSDll)" << endl;
     cpp_file << "        {" << endl;
-    cpp_file << "            MessageBox(nullptr, L\"Failed to load UE4SS.dll. Please see the docs on correct installation: "
+    cpp_file << "            MessageBoxW(nullptr, L\"Failed to load UE4SS.dll. Please see the docs on correct installation: "
                 "https://docs.ue4ss.com/installation-guide\", L\"UE4SS Error\", MB_OK | MB_ICONERROR);"
              << endl;
     cpp_file << "            ExitProcess(0);" << endl;

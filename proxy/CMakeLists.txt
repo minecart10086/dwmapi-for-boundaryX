@@ -66,7 +66,7 @@ endif()
 set_target_properties(${TARGET} PROPERTIES OUTPUT_NAME ${PROXY_NAME})
 
 if(WIN32)
-    target_link_libraries(${TARGET} PRIVATE File)
+    target_link_libraries(${TARGET} PRIVATE File glaze::glaze)
 endif()
 
 # Determine if we're using an export file or a DLL
